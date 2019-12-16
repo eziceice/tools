@@ -1,22 +1,24 @@
+import operator
+
 from igramscraper.instagram import Instagram
 from datetime import datetime
+import requests
+import json
+import numpy as np
+import matplotlib.pyplot as plt
 from argparse import ArgumentParser
-
 
 
 def diff_month(d1, d2):
     return (d1.year - d2.year) * 12 + d1.month - d2.month
 
 
-class Detail:
-    username = ""
-    total_likes = 0
-    posts_in_month = {}
-
-    def __init__(self, username, total_likes, posts_in_month):
-        self.username = username
-        self.total_likes = total_likes
-        self.posts_in_month = posts_in_month
+def make_autopct(values):
+    def my_autopct(pct):
+        total = sum(values)
+        val = int(round(pct * total / 100.0))
+        return '{p:.2f}%  ({v:d})'.format(p=pct, v=val)
+    return my_autopct
 
 
 class InstagramAnalyzer:
@@ -26,7 +28,8 @@ class InstagramAnalyzer:
         self._login(username, password)
         self.likes = {}
         self.month_posts = {}
-        self.following_common = []
+        self.shared_followings = []
+        self.likes_contributors = {}
 
     def _login(self, username, password):
         self.instagram.with_credentials(username, password)
@@ -34,9 +37,12 @@ class InstagramAnalyzer:
 
     def analyze(self, *args, **kwargs):
         for arg in args:
+            if len(args) != 1:
+                self._find_shared_following(arg)
             medias = self.instagram.get_medias(arg, count=kwargs['count'])
             self._count_total_likes(arg, medias)
             self._count_posts_in_month(arg, medias)
+            self._count_likes_contributor(arg, medias)
 
     def _count_total_likes(self, username, medias):
         total_likes = 0
@@ -49,55 +55,173 @@ class InstagramAnalyzer:
         month_count = {}
         for media in medias:
             date = datetime.fromtimestamp(media.created_time)
+            year_month = f'{date.year}-{date.month}'
             if diff_month(start, date) > 1:
                 start = date
-                month_count['%s-%s' % (date.year, date.month)] = 1
+                month_count[year_month] = 1
             elif diff_month(start, date) <= 1:
-                if '%s-%s' % (date.year, date.month) in month_count.keys():
-                    month_count['%s-%s' % (date.year, date.month)] += 1
+                if year_month in month_count.keys():
+                    month_count[year_month] += 1
                 else:
-                    month_count['%s-%s' % (date.year, date.month)] = 1
+                    month_count[year_month] = 1
         self.month_posts[username] = month_count
 
-    def find_following_in_common(self, *args):
-        for arg in args:
-            account = self.instagram.get_account(arg)
-            following = self.instagram.get_following(account.identifier, 200, 100, delayed=True)['accounts']
-            following_username = self._populate_following(following)
-            if len(self.following_common) == 0:
-                self.following_common = following_username
-            else:
-                self.following_common = list(set(self.following_common).intersection(following_username))
+    def _count_likes_contributor(self, arg, medias):
+        contributor_likes = {}
+        for media in medias:
+            accounts = self.instagram.get_media_likes_by_code(
+                media.short_code, 40)['accounts']
+            for account in accounts:
+                key = account.username
+                if arg not in self.likes_contributors.keys():
+                    self.likes_contributors[arg] = {}
+                if key not in contributor_likes.keys():
+                    contributor_likes[key] = 1
+                else:
+                    contributor_likes[key] += 1
+        contributor_likes = dict(
+            sorted(contributor_likes.items(), key=operator.itemgetter(1), reverse=True)[:5])
+        self.likes_contributors[arg] = contributor_likes
 
+    def _find_shared_following(self, arg):
+        account = self.instagram.get_account(arg)
+        following = self.instagram.get_following(
+            account.identifier, 200, 100, delayed=True)['accounts']
+        following_username = self._populate_following_username(following)
+        if len(self.shared_followings) == 0:
+            self.shared_followings = following_username
+        else:
+            self.shared_followings = list(
+                set(self.shared_followings).intersection(following_username))
 
-    def _populate_following(self, following):
+    @staticmethod
+    def _populate_following_username(following):
         following_username = set()
         for account in following:
             following_username.add(account.username)
         return following_username
 
 
+class InstagramAuth:
+
+    BASE_URL = 'https://www.instagram.com/'
+    LOGIN_URL = BASE_URL + 'accounts/login/ajax/'
+    USER_AGENT = 'Instagram 52.0.0.8.83 (iPhone; CPU iPhone OS 11_4 like Mac OS X; en_US; en-US; scale=2.00; 750x1334) AppleWebKit/605.1.15'
+    BROWSER_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/67.0.3396.87 Safari/537.36'
+    CSRF_TOKEN = 'csrftoken'
+
+    def __init__(self):
+        self.session = requests.Session()
+        self.cookies = None
+        self.authenticated = False
+        self.logged_in = False
+        self.posts = []
+
+    def login(self):
+        self.session.headers.update(
+            {'Referer': self.BASE_URL, 'user-agent': self.USER_AGENT})
+        response = self.session.get(self.BASE_URL)
+        self.session.headers.update(
+            {'X-CSRFToken': response.cookies[self.CSRF_TOKEN]})
+        login_details = {'username': USERNAME, 'password': PASSWORD}
+        login = self.session.post(
+            self.LOGIN_URL, data=login_details, allow_redirects=True)
+        self.session.headers.update(
+            {'X-CSRFToken': login.cookies[self.CSRF_TOKEN]})
+        self.cookies = login.cookies
+        login_text = json.loads(login.text)
+
+        if login_text.get('authenticated') and login.status_code == 200:
+            self.authenticated = True
+            self.logged_in = True
+            self.session.headers.update(
+                {'user-agent': self.BROWSER_USER_AGENT})
+        else:
+            print('Login failed for ' + self.USERNAME)
+            if 'checkpoint_url' in login_text:
+                checkpoint_url = self.BASE_URL[0:-
+                                               1] + login_text['checkpoint_url']
+                print('Verifying your account at ' + checkpoint_url)
+                self.verify_account(checkpoint_url)
+
+    def verify_account(self, checkpoint_url):
+        self.session.headers.update({'Referer': self.BASE_URL})
+        response = self.session.get(checkpoint_url)
+        self.session.headers.update(
+            {'X-CSRFToken': response.cookies[self.CSRF_TOKEN], 'X-Instagram-AJAX': '1'})
+        self.session.headers.update({'Referer': checkpoint_url})
+
+        mode = int(input('Choose a verification mode (0 - SMS, 1 - Email): '))
+        choice_data = {'choice': mode}
+        verification = self.session.post(
+            checkpoint_url, data=choice_data, allow_redirects=True)
+        self.session.headers.update(
+            {'X-CSRFToken': verification.cookies[self.CSRF_TOKEN], 'X-Instagram-AJAX': '1'})
+
+        code = int(input('Enter code received: '))
+        code_data = {'security_code': code}
+        code = self.session.post(
+            checkpoint_url, data=code_data, allow_redirects=True)
+        self.session.headers.update(
+            {'X-CSRFToken': code.cookies[self.CSRF_TOKEN]})
+        self.cookies = code.cookies
+        code_text = json.loads(code.text)
+
+        if code_text['status'] == 'ok':
+            print("Successfully logged in")
+            self.authenticated = True
+            self.logged_in = True
+        else:
+            print("Failed to verify your account: " + json.dumps(code_text))
+
+
+class ResultGenerator:
+    def __init__(self, instagram_analyzer, users):
+        self.shared_followings = instagram_analyzer.shared_followings
+        self.users = users
+        self.likes = instagram_analyzer.likes
+        self.likes_contributors = instagram_analyzer.likes_contributors
+
+    def save_shared_following(self, filename='shared_following.txt', path='result'):
+        with open(f'{path}/{filename}', 'w') as file:
+            for following in self.shared_followings:
+                file.write(f'{following}\n')
+
+    def save_likes_bar_chart(self, path='result'):
+        y_pos = np.arange(len(self.users))
+        plt.bar(self.users, self.likes.values(), align='center', alpha=0.5)
+        plt.xticks(y_pos, self.users)
+        plt.ylabel('Likes')
+        plt.title('Total Likes Per User')
+        plt.savefig(f'{path}/total_likes.png')
+
+    def save_likes_contributors_pie_chart(self, path='result'):
+        for k, v in self.likes_contributors.items():
+            labels = v.keys()
+            sizes = v.values()
+            fig1, ax1 = plt.subplots()
+            ax1.pie(sizes, labels=labels, autopct=make_autopct(sizes),
+                    shadow=True, startangle=90, title=f'Likes Contributors for {v}')
+            ax1.axis('equal')  # Equal aspect ratio ensures that pie is drawn as a circle.
+            plt.savefig(f'{path}/likes_contributor_of_{v}')
 
 
 if __name__ == '__main__':
-    # parser = ArgumentParser()
-    # username = parser.add_argument('-u', '--username', help='Instagram account')
-    # password = parser.add_argument('-p', '--password', help='Instagram password')
-    #
-    # if username or password is None:
-    #     print('Username and password must be provided in the argument')
-    #     raise ValueError()
+    parser = ArgumentParser()
+    parser.add_argument('-u', '--username', help='Instagram account')
+    parser.add_argument('-p', '--password', help='Instagram password')
+    parser.add_argument('-aus', '--ausers', help='Instagram users that needs to be analyzed')
+    result = parser.parse_args()
 
-    instagramAnalyzer = InstagramAnalyzer(USERNAME, PASSWORD)
-    instagramAnalyzer.find_following_in_common('cocorosiekz', 'ez_ice', 'tonny_z_z')
-    print(instagramAnalyzer.following_common)
-    # instagramAnalyzer.analyze('cocorosiekz', count=100)
-    #
-    # print(instagramAnalyzer.likes)
-    #
-    # for user, likes in instagramAnalyzer.likes.items():
-    #     print('%s\'s total likes %s' % (user, likes))
-    #
-    # for user, posts in instagramAnalyzer.month_posts.items():
-    #     for month, month_posts in posts.items():
-    #         print('%s posted %s in %s' % (user, month_posts, month))
+    if result.username or result.password is None:
+        print('Username and password must be provided in the argument')
+        raise ValueError()
+
+    instagram_analyzer = InstagramAnalyzer(result.username, result.password)
+    instagram_analyzer.analyze(result.ausers, count=20)
+
+    result_generator = ResultGenerator(instagram_analyzer, result.ausers)
+    result_generator.save_likes_bar_chart()
+    result_generator.save_likes_contributors_pie_chart()
+    result_generator.save_shared_following()
+
