@@ -2,16 +2,16 @@
 
 Tools that used for work or self-interest
 
-## Instagram Analyzer
+## [Instagram Analyzer](https://github.com/eziceice/tools/blob/master/instagram_analyzer.py)
 It is a tool to analyze your instagram posts and likes with your friend, for example total likes, shared followings or likes contributors. 
-[Instagram Analyzer](https://github.com/eziceice/tools/blob/master/instagram_analyzer.py)
+
 **Use-age**:
 
     python instagram_analyzer.py -u username -p password -aus user1 user2
 
-## Branch Name Generator
+## [Branch Name Generator](https://github.com/eziceice/tools/blob/master/bngenerator.py)
 Generate correct branch name based on requirements. 
-[Branch Name Generator](https://github.com/eziceice/tools/blob/master/bngenerator.py)
+
 
 Template: 
 
