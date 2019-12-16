@@ -183,21 +183,29 @@ class ResultGenerator:
         self.users = users
         self.likes = instagram_analyzer.likes
         self.likes_contributors = instagram_analyzer.likes_contributors
+        self.month_posts = instagram_analyzer.month_posts
 
-    def save_shared_following(self, filename='shared_following.txt', path='result'):
+    def generate_result(self):
+        self._save_shared_following()
+        self._save_likes_contributors_pie_chart()
+        self._save_likes_bar_chart()
+        self._save_monthly_posts_bar_chart()
+
+    def _save_shared_following(self, filename='shared_following.txt', path='result'):
         with open(f'{path}/{filename}', 'w') as file:
             for following in self.shared_followings:
                 file.write(f'{following}\n')
 
-    def save_likes_bar_chart(self, path='result'):
+    def _save_likes_bar_chart(self, path='result'):
         y_pos = np.arange(len(self.users))
         plt.bar(self.users, self.likes.values(), align='center', alpha=0.5)
         plt.xticks(y_pos, self.users)
         plt.ylabel('Likes')
         plt.title('Total Likes Per User')
         plt.savefig(f'{path}/total_likes.png')
+        plt.clf()
 
-    def save_likes_contributors_pie_chart(self, path='result'):
+    def _save_likes_contributors_pie_chart(self, path='result'):
         for k, v in self.likes_contributors.items():
             labels = v.keys()
             sizes = v.values()
@@ -207,7 +215,18 @@ class ResultGenerator:
             plt.title(f'Likes Contributors for {k}')
             # Equal aspect ratio ensures that pie is drawn as a circle.
             ax1.axis('equal')
-            plt.savefig(f'{path}/likes_contributor_of_{k}')
+            plt.savefig(f'{path}/likes_contributor_for_{k}')
+            plt.clf()
+
+    def _save_monthly_posts_bar_chart(self, path='result'):
+        for user, posts in self.month_posts.items():
+            y_pos = np.arange(len(posts.items()))
+            plt.bar(posts.keys(), posts.values(), align='center', alpha=0.5)
+            plt.xticks(y_pos, posts.keys())
+            plt.ylabel('Number of Posts')
+            plt.title(f'Posts Per Month For {user}')
+            plt.savefig(f'{path}/posts_per_month_for_{user}.png')
+            plt.clf()
 
 
 if __name__ == '__main__':
@@ -228,6 +247,4 @@ if __name__ == '__main__':
     instagram_analyzer.analyze(result.ausers, count=20)
 
     result_generator = ResultGenerator(instagram_analyzer, result.ausers)
-    result_generator.save_likes_bar_chart()
-    result_generator.save_likes_contributors_pie_chart()
-    result_generator.save_shared_following()
+    result_generator.generate_result()
