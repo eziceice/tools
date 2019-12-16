@@ -35,7 +35,7 @@ class InstagramAnalyzer:
         self.instagram.with_credentials(username, password)
         self.instagram.login()
 
-    def analyze(self, *args, **kwargs):
+    def analyze(self, args, **kwargs):
         for arg in args:
             if len(args) != 1:
                 self._find_shared_following(arg)
@@ -109,6 +109,8 @@ class InstagramAuth:
     USER_AGENT = 'Instagram 52.0.0.8.83 (iPhone; CPU iPhone OS 11_4 like Mac OS X; en_US; en-US; scale=2.00; 750x1334) AppleWebKit/605.1.15'
     BROWSER_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/67.0.3396.87 Safari/537.36'
     CSRF_TOKEN = 'csrftoken'
+    USERNAME = ''
+    PASSWORD = ''
 
     def __init__(self):
         self.session = requests.Session()
@@ -123,7 +125,7 @@ class InstagramAuth:
         response = self.session.get(self.BASE_URL)
         self.session.headers.update(
             {'X-CSRFToken': response.cookies[self.CSRF_TOKEN]})
-        login_details = {'username': USERNAME, 'password': PASSWORD}
+        login_details = {'username': self.USERNAME, 'password': self.PASSWORD}
         login = self.session.post(
             self.LOGIN_URL, data=login_details, allow_redirects=True)
         self.session.headers.update(
@@ -201,19 +203,24 @@ class ResultGenerator:
             sizes = v.values()
             fig1, ax1 = plt.subplots()
             ax1.pie(sizes, labels=labels, autopct=make_autopct(sizes),
-                    shadow=True, startangle=90, title=f'Likes Contributors for {v}')
-            ax1.axis('equal')  # Equal aspect ratio ensures that pie is drawn as a circle.
-            plt.savefig(f'{path}/likes_contributor_of_{v}')
+                    shadow=True, startangle=90)
+            plt.title(f'Likes Contributors for {k}')
+            # Equal aspect ratio ensures that pie is drawn as a circle.
+            ax1.axis('equal')
+            plt.savefig(f'{path}/likes_contributor_of_{k}')
 
 
 if __name__ == '__main__':
     parser = ArgumentParser()
-    parser.add_argument('-u', '--username', help='Instagram account')
-    parser.add_argument('-p', '--password', help='Instagram password')
-    parser.add_argument('-aus', '--ausers', help='Instagram users that needs to be analyzed')
+    parser.add_argument('-u', '--username',
+                        help='Instagram account', required=True)
+    parser.add_argument('-p', '--password',
+                        help='Instagram password', required=True)
+    parser.add_argument('-aus', '--ausers', nargs='+', required=True,
+                        help='Instagram users that needs to be analyzed')
     result = parser.parse_args()
 
-    if result.username or result.password is None:
+    if (result.username or result.password) is None:
         print('Username and password must be provided in the argument')
         raise ValueError()
 
@@ -224,4 +231,3 @@ if __name__ == '__main__':
     result_generator.save_likes_bar_chart()
     result_generator.save_likes_contributors_pie_chart()
     result_generator.save_shared_following()
-
