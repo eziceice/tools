@@ -1,0 +1,2 @@
+TEMPLATE_URL = ""
+PLUGIN_VERSION = ""
