@@ -1,0 +1,7 @@
+version: '3'
+services:
+  template:
+    build: .
+    image: template-service:latest
+    volumes:
+      - ~/.aws/:/root/.aws:ro

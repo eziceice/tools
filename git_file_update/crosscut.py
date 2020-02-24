@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/publish/env python3
 
 import argparse
 import json
