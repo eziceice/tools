@@ -1,0 +1,5 @@
+slackclient
+certifi
+slackeventsapi
+Flask
+pymongo
